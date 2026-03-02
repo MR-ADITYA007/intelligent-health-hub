@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   LayoutDashboard, BedDouble, Users, Stethoscope, Brain,
@@ -50,18 +51,79 @@ const dummyPatients = [
 const allDepartments = ["Cardiology", "General Medicine", "Orthopedics", "Dermatology", "Neurology", "Pediatrics", "Emergency"];
 
 const AdminDashboard = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"overview" | "beds" | "directory">("overview");
   const [beds, setBeds] = useState(initialBeds);
   const [allocatingBed, setAllocatingBed] = useState<number | null>(null);
+  const [selectedBedForAllocation, setSelectedBedForAllocation] = useState<number | null>(null);
   const [allocateForm, setAllocateForm] = useState({ patientName: "" });
   const [directoryTab, setDirectoryTab] = useState<"patients" | "doctors">("patients");
   const [searchDir, setSearchDir] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedDept, setSelectedDept] = useState<string>("All");
+  const [doctors, setDoctors] = useState(dummyDoctors);
+  const [patients, setPatients] = useState(dummyPatients);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [formData, setFormData] = useState({ name: "", email: "", phone: "", department: "", age: "", status: "Active" });
 
-  const totalPatients = dummyPatients.length;
-  const availableDoctors = dummyDoctors.filter(d => d.status === "Active").length;
+  // Determine activeTab based on URL path
+  useEffect(() => {
+    const path = location.pathname;
+    if (path.includes("/beds")) {
+      setActiveTab("beds");
+    } else if (path.includes("/directory")) {
+      setActiveTab("directory");
+    } else {
+      setActiveTab("overview");
+    }
+  }, [location.pathname]);
+
+  const totalPatients = patients.length;
+  const availableDoctors = doctors.filter(d => d.status === "Active").length;
   const freeBeds = beds.filter(b => !b.occupied).length;
+
+  const getDeptCount = (dept: string, list: { dept: string }[]) => list.filter(i => i.dept === dept).length;
+
+  const handleAddOrEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name || !formData.email || !formData.phone || !formData.department) return;
+
+    if (editingId !== null) {
+      if (directoryTab === "patients") {
+        setPatients(patients.map(p => p.id === editingId ? { ...p, name: formData.name, email: formData.email, phone: formData.phone, dept: formData.department, age: parseInt(formData.age) || 0, status: formData.status } : p));
+      } else {
+        setDoctors(doctors.map(d => d.id === editingId ? { ...d, name: formData.name, email: formData.email, phone: formData.phone, dept: formData.department, status: formData.status } : d));
+      }
+      setEditingId(null);
+    } else {
+      const newId = Math.max(...(directoryTab === "patients" ? patients : doctors).map(i => i.id), 0) + 1;
+      if (directoryTab === "patients") {
+        setPatients([...patients, { id: newId, name: formData.name, email: formData.email, phone: formData.phone, dept: formData.department, age: parseInt(formData.age) || 0, status: formData.status }]);
+      } else {
+        setDoctors([...doctors, { id: newId, name: formData.name, email: formData.email, phone: formData.phone, dept: formData.department, status: formData.status }]);
+      }
+    }
+    setFormData({ name: "", email: "", phone: "", department: "", age: "", status: "Active" });
+    setShowAddForm(false);
+  };
+
+  const handleDelete = (id: number) => {
+    if (directoryTab === "patients") {
+      setPatients(patients.filter(p => p.id !== id));
+    } else {
+      setDoctors(doctors.filter(d => d.id !== id));
+    }
+  };
+
+  const handleEdit = (id: number) => {
+    const item = directoryTab === "patients" ? patients.find(p => p.id === id) : doctors.find(d => d.id === id);
+    if (item) {
+      setFormData({ name: item.name, email: item.email, phone: item.phone, department: item.dept, age: "age" in item ? (item as any).age.toString() : "", status: item.status });
+      setEditingId(id);
+      setShowAddForm(true);
+    }
+  };
 
   const handleAllocate = (bedId: number) => {
     setAllocatingBed(bedId);
@@ -69,6 +131,7 @@ const AdminDashboard = () => {
       setBeds(prev => prev.map(b => b.id === bedId ? { ...b, occupied: true, patient: allocateForm.patientName || "New Patient" } : b));
       setAllocatingBed(null);
       setAllocateForm({ patientName: "" });
+      setSelectedBedForAllocation(null);
     }, 2000);
   };
 
@@ -76,17 +139,15 @@ const AdminDashboard = () => {
     setBeds(prev => prev.map(b => b.id === bedId ? { ...b, occupied: false, patient: null } : b));
   };
 
-  const filteredDoctors = dummyDoctors.filter(d =>
+  const filteredDoctors = doctors.filter(d =>
     (selectedDept === "All" || d.dept === selectedDept) &&
     d.name.toLowerCase().includes(searchDir.toLowerCase())
   );
 
-  const filteredPatients = dummyPatients.filter(p =>
+  const filteredPatients = patients.filter(p =>
     (selectedDept === "All" || p.dept === selectedDept) &&
     p.name.toLowerCase().includes(searchDir.toLowerCase())
   );
-
-  const getDeptCount = (dept: string, list: { dept: string }[]) => list.filter(i => i.dept === dept).length;
 
   return (
     <DashboardLayout navItems={navItems} role="Admin">
@@ -101,13 +162,13 @@ const AdminDashboard = () => {
         {/* Tab nav */}
         <div className="flex gap-2 border-b border-border pb-2">
           {[
-            { key: "overview" as const, label: "Overview", icon: LayoutDashboard },
-            { key: "beds" as const, label: "Bed Management", icon: BedDouble },
-            { key: "directory" as const, label: "Master Directory", icon: Users },
+            { key: "overview" as const, label: "Overview", icon: LayoutDashboard, path: "/admin" },
+            { key: "beds" as const, label: "Bed Management", icon: BedDouble, path: "/admin/beds" },
+            { key: "directory" as const, label: "Master Directory", icon: Users, path: "/admin/directory" },
           ].map((tab) => (
             <button
               key={tab.key}
-              onClick={() => { setActiveTab(tab.key); setSearchDir(""); setSelectedDept("All"); }}
+              onClick={() => { navigate(tab.path); setSearchDir(""); setSelectedDept("All"); setSelectedBedForAllocation(null); setAllocateForm({ patientName: "" }); }}
               className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
                 activeTab === tab.key
                   ? "bg-card text-primary border border-border border-b-0"
@@ -191,6 +252,7 @@ const AdminDashboard = () => {
                               ? "bg-emergency/10 border-emergency/30 text-emergency"
                               : "bg-success/10 border-success/30 text-success cursor-pointer hover:bg-success/20"
                           }`}
+                          onClick={() => !bed.occupied && setSelectedBedForAllocation(bed.id)}
                         >
                           <BedDouble className="h-5 w-5 mx-auto mb-1" />
                           <p className="font-bold">#{bed.id}</p>
@@ -206,7 +268,7 @@ const AdminDashboard = () => {
                                 Release
                               </Button>
                             </div>
-                          ) : (
+                          ) : selectedBedForAllocation === bed.id ? (
                             <div className="mt-1">
                               {allocatingBed === bed.id ? (
                                 <Loader2 className="h-4 w-4 animate-spin mx-auto text-primary" />
@@ -229,6 +291,8 @@ const AdminDashboard = () => {
                                 </div>
                               )}
                             </div>
+                          ) : (
+                            <p className="text-[10px] text-muted-foreground mt-1">Click to add</p>
                           )}
                         </div>
                       ))}
@@ -251,17 +315,17 @@ const AdminDashboard = () => {
                   size="sm"
                   onClick={() => { setDirectoryTab("patients"); setSearchDir(""); setSelectedDept("All"); }}
                 >
-                  <Users className="h-4 w-4 mr-1" /> Patients ({dummyPatients.length})
+                  <Users className="h-4 w-4 mr-1" /> Patients ({patients.length})
                 </Button>
                 <Button
                   variant={directoryTab === "doctors" ? "default" : "outline"}
                   size="sm"
                   onClick={() => { setDirectoryTab("doctors"); setSearchDir(""); setSelectedDept("All"); }}
                 >
-                  <Stethoscope className="h-4 w-4 mr-1" /> Doctors ({dummyDoctors.length})
+                  <Stethoscope className="h-4 w-4 mr-1" /> Doctors ({doctors.length})
                 </Button>
               </div>
-              <Button size="sm" onClick={() => setShowAddForm(!showAddForm)}>
+              <Button size="sm" onClick={() => { setShowAddForm(!showAddForm); setEditingId(null); setFormData({ name: "", email: "", phone: "", department: "", age: "", status: "Active" }); }}>
                 <Plus className="h-4 w-4 mr-1" /> Add {directoryTab === "patients" ? "Patient" : "Doctor"}
               </Button>
             </div>
@@ -271,41 +335,52 @@ const AdminDashboard = () => {
               <Card className="border-border">
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm">Add New {directoryTab === "patients" ? "Patient" : "Doctor"}</CardTitle>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowAddForm(false)}>
+                    <CardTitle className="text-sm">{editingId ? "Edit" : "Add New"} {directoryTab === "patients" ? "Patient" : "Doctor"}</CardTitle>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setShowAddForm(false); setEditingId(null); setFormData({ name: "", email: "", phone: "", department: "", age: "", status: "Active" }); }}>
                       <X className="h-3 w-3" />
                     </Button>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <form className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3" onSubmit={(e) => { e.preventDefault(); setShowAddForm(false); }}>
+                  <form className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3" onSubmit={handleAddOrEdit}>
                     <div className="space-y-1">
                       <Label className="text-xs">Full Name</Label>
-                      <Input placeholder="Enter name..." className="h-8 text-sm" />
+                      <Input placeholder="Enter name..." className="h-8 text-sm" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Email</Label>
-                      <Input type="email" placeholder="email@example.com" className="h-8 text-sm" />
+                      <Input type="email" placeholder="email@example.com" className="h-8 text-sm" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} required />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Phone</Label>
-                      <Input placeholder="+1-555-..." className="h-8 text-sm" />
+                      <Input placeholder="+1-555-..." className="h-8 text-sm" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} required />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Department</Label>
-                      <select className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground">
+                      <select className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground" value={formData.department} onChange={(e) => setFormData({ ...formData, department: e.target.value })} required>
+                        <option value="">Select department...</option>
                         {allDepartments.map(d => <option key={d} value={d}>{d}</option>)}
                       </select>
                     </div>
                     {directoryTab === "patients" && (
                       <div className="space-y-1">
                         <Label className="text-xs">Age</Label>
-                        <Input type="number" placeholder="Age" className="h-8 text-sm" />
+                        <Input type="number" placeholder="Age" className="h-8 text-sm" value={formData.age} onChange={(e) => setFormData({ ...formData, age: e.target.value })} />
                       </div>
                     )}
+                    <div className="space-y-1">
+                      <Label className="text-xs">Status</Label>
+                      <select className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground" value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value })}>
+                        <option value="Active">Active</option>
+                        <option value="On Leave">On Leave</option>
+                        <option value="Admitted">Admitted</option>
+                        <option value="Discharged">Discharged</option>
+                        <option value="Critical">Critical</option>
+                      </select>
+                    </div>
                     <div className="flex items-end">
                       <Button type="submit" size="sm" className="w-full">
-                        <Check className="h-3 w-3 mr-1" /> Save
+                        <Check className="h-3 w-3 mr-1" /> {editingId ? "Update" : "Save"}
                       </Button>
                     </div>
                   </form>
@@ -325,14 +400,14 @@ const AdminDashboard = () => {
                 onChange={(e) => setSelectedDept(e.target.value)}
               >
                 <option value="All">All Departments</option>
-                {allDepartments.map(d => <option key={d} value={d}>{d} ({getDeptCount(d, directoryTab === "patients" ? dummyPatients : dummyDoctors)})</option>)}
+                {allDepartments.map(d => <option key={d} value={d}>{d} ({getDeptCount(d, directoryTab === "patients" ? patients : doctors)})</option>)}
               </select>
             </div>
 
             {/* Department counts */}
             <div className="flex flex-wrap gap-2">
               {allDepartments.map(dept => {
-                const count = getDeptCount(dept, directoryTab === "patients" ? dummyPatients : dummyDoctors);
+                const count = getDeptCount(dept, directoryTab === "patients" ? patients : doctors);
                 if (count === 0) return null;
                 return (
                   <Badge
@@ -381,10 +456,10 @@ const AdminDashboard = () => {
                         </td>
                         <td className="p-3 text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <Button variant="ghost" size="icon" className="h-7 w-7">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(item.id)}>
                               <Edit className="h-3 w-3" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive">
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDelete(item.id)}>
                               <Trash2 className="h-3 w-3" />
                             </Button>
                           </div>

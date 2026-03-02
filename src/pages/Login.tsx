@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Activity, Mail, Lock, ArrowRight, User, Stethoscope, ShieldCheck } from "lucide-react";
+import { Activity, Mail, Lock, ArrowRight, User, Stethoscope, ShieldCheck, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,8 +31,19 @@ const Login = () => {
     toast.success(`Logged in as ${selectedRole}: ${email}`, {
       description: "Redirecting to your dashboard...",
     });
-    const routes: Record<Role, string> = { patient: "/patient", doctor: "/doctor", admin: "/admin" };
-    setTimeout(() => navigate(routes[selectedRole]), 500);
+    
+    // Check if there's a redirect URL stored and only use it if logging in as patient
+    const redirectUrl = localStorage.getItem("redirect_url");
+    setTimeout(() => {
+      if (redirectUrl && selectedRole === "patient") {
+        localStorage.removeItem("redirect_url");
+        navigate(redirectUrl);
+      } else {
+        localStorage.removeItem("redirect_url"); // Clear it even if not using
+        const routes: Record<Role, string> = { patient: "/patient", doctor: "/doctor", admin: "/admin" };
+        navigate(routes[selectedRole]);
+      }
+    }, 500);
   };
 
   return (
@@ -73,14 +84,19 @@ const Login = () => {
           transition={{ duration: 0.6 }}
           className="w-full max-w-md"
         >
-          <Link to="/" className="flex items-center gap-2 mb-10 lg:hidden">
-            <div className="h-9 w-9 rounded-lg hero-gradient flex items-center justify-center">
-              <Activity className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="font-display font-bold text-lg text-foreground">
-              MedFlow<span className="text-gradient">AI</span>
-            </span>
-          </Link>
+          <div className="flex items-center justify-between mb-10">
+            <Link to="/" className="flex items-center gap-2 lg:hidden">
+              <div className="h-9 w-9 rounded-lg hero-gradient flex items-center justify-center">
+                <Activity className="h-5 w-5 text-primary-foreground" />
+              </div>
+              <span className="font-display font-bold text-lg text-foreground">
+                MedFlow<span className="text-gradient">AI</span>
+              </span>
+            </Link>
+            <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors p-2 rounded-lg hover:bg-secondary">
+              <ArrowLeft className="h-5 w-5" />
+            </Link>
+          </div>
 
           <h1 className="text-3xl font-display font-extrabold text-foreground mb-2">Welcome back</h1>
           <p className="text-muted-foreground mb-8">Sign in to your account to continue</p>

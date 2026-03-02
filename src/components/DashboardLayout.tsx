@@ -34,6 +34,7 @@ const DashboardLayout = ({ children, navItems, role }: DashboardLayoutProps) => 
 
   const handleLogout = () => {
     localStorage.removeItem("user_role");
+    localStorage.removeItem("redirect_url");
     navigate("/login");
   };
 
