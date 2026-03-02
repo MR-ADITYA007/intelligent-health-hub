@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   History, CalendarPlus, AlertTriangle, Search, Clock,
@@ -44,6 +45,8 @@ const nearbyHospitals = [
 ];
 
 const PatientDashboard = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"history" | "appointment" | "emergency">("history");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("");
@@ -51,6 +54,18 @@ const PatientDashboard = () => {
   const [selectedTime, setSelectedTime] = useState("");
   const [bookingState, setBookingState] = useState<"idle" | "checking" | "confirmed" | "alternate">("idle");
   const [showEmergencyResults, setShowEmergencyResults] = useState(false);
+
+  // Determine activeTab based on URL path
+  useEffect(() => {
+    const path = location.pathname;
+    if (path.includes("/appointment")) {
+      setActiveTab("appointment");
+    } else if (path.includes("/emergency")) {
+      setActiveTab("emergency");
+    } else {
+      setActiveTab("history");
+    }
+  }, [location.pathname]);
 
   const filteredHistory = medicalHistory.filter(
     (h) =>
@@ -110,13 +125,13 @@ const PatientDashboard = () => {
         {/* Tab navigation */}
         <div className="flex gap-2 border-b border-border pb-2">
           {[
-            { key: "history" as const, label: "Medical History", icon: History },
-            { key: "appointment" as const, label: "Book Appointment", icon: CalendarPlus },
-            { key: "emergency" as const, label: "Emergency", icon: AlertTriangle },
+            { key: "history" as const, label: "Medical History", icon: History, path: "/patient" },
+            { key: "appointment" as const, label: "Book Appointment", icon: CalendarPlus, path: "/patient/appointment" },
+            { key: "emergency" as const, label: "Emergency", icon: AlertTriangle, path: "/patient/emergency" },
           ].map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => navigate(tab.path)}
               className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
                 activeTab === tab.key
                   ? "bg-card text-primary border border-border border-b-0"
