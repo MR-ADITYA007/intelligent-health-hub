@@ -12,13 +12,16 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
+// Import the new Emergency Locator component
+import EmergencyLocator from "@/components/EmergencyLocator";
+
 const navItems = [
   { title: "Medical History", url: "/patient", icon: History },
   { title: "Book Appointment", url: "/patient/appointment", icon: CalendarPlus },
   { title: "Emergency", url: "/patient/emergency", icon: AlertTriangle },
 ];
 
-// Dummy data
+// Dummy data for other tabs
 const medicalHistory = [
   { id: 1, date: "2026-02-15", doctor: "Dr. Sarah Chen", department: "Cardiology", diagnosis: "Mild Hypertension", prescription: "Amlodipine 5mg", status: "Completed" },
   { id: 2, date: "2026-01-20", doctor: "Dr. James Wilson", department: "General Medicine", diagnosis: "Seasonal Flu", prescription: "Oseltamivir 75mg", status: "Completed" },
@@ -37,12 +40,6 @@ const timeSlots = [
   { time: "04:00 PM", demand: "medium" },
 ];
 
-const nearbyHospitals = [
-  { name: "City General Hospital", distance: "1.2 km", beds: 23, eta: "4 min", rating: 4.8 },
-  { name: "St. Mary's Medical Center", distance: "3.5 km", beds: 8, eta: "10 min", rating: 4.6 },
-  { name: "Metro Emergency Care", distance: "5.1 km", beds: 45, eta: "15 min", rating: 4.9 },
-];
-
 const PatientDashboard = () => {
   const [activeTab, setActiveTab] = useState<"history" | "appointment" | "emergency">("history");
   const [searchQuery, setSearchQuery] = useState("");
@@ -50,7 +47,6 @@ const PatientDashboard = () => {
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
   const [bookingState, setBookingState] = useState<"idle" | "checking" | "confirmed" | "alternate">("idle");
-  const [showEmergencyResults, setShowEmergencyResults] = useState(false);
 
   const filteredHistory = medicalHistory.filter(
     (h) =>
@@ -336,70 +332,10 @@ const PatientDashboard = () => {
           </motion.div>
         )}
 
-        {/* Emergency Tab */}
+        {/* Real Emergency Tab */}
         {activeTab === "emergency" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-            <Card className="border-2 border-emergency/30 bg-emergency/5">
-              <CardContent className="p-6 text-center">
-                <AlertTriangle className="h-10 w-10 text-emergency mx-auto mb-3" />
-                <h3 className="text-xl font-display font-bold text-foreground mb-2">Emergency Assistance</h3>
-                <p className="text-muted-foreground text-sm mb-4">
-                  Find the nearest hospital with available beds using real-time priority queue routing.
-                </p>
-                <Button
-                  variant="emergency"
-                  size="lg"
-                  onClick={() => setShowEmergencyResults(true)}
-                >
-                  <MapPin className="mr-2 h-5 w-5" />
-                  Find Nearest Hospital
-                </Button>
-              </CardContent>
-            </Card>
-
-            {showEmergencyResults && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-4"
-              >
-                {/* Map placeholder */}
-                <Card className="border-border overflow-hidden">
-                  <div className="h-48 bg-muted flex items-center justify-center relative">
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_40%_50%,hsl(var(--primary)/0.1),transparent_60%)]" />
-                    <div className="text-center">
-                      <MapPin className="h-8 w-8 text-primary mx-auto mb-2" />
-                      <p className="text-sm text-muted-foreground">Interactive Map — GPS Location Active</p>
-                    </div>
-                  </div>
-                </Card>
-
-                <div className="grid gap-3">
-                  {nearbyHospitals.map((hospital, i) => (
-                    <Card key={hospital.name} className={`border-border ${i === 0 ? "ring-2 ring-success/50" : ""}`}>
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              {i === 0 && <Badge className="bg-success text-success-foreground text-[10px]">Nearest</Badge>}
-                              <p className="font-semibold text-foreground">{hospital.name}</p>
-                            </div>
-                            <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                              <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{hospital.distance}</span>
-                              <span className="flex items-center gap-1"><Clock className="h-3 w-3" />ETA: {hospital.eta}</span>
-                              <span className="flex items-center gap-1"><Bed className="h-3 w-3" />{hospital.beds} beds</span>
-                            </div>
-                          </div>
-                          <Button size="sm" variant={i === 0 ? "default" : "outline"}>
-                            Route <ChevronRight className="ml-1 h-3 w-3" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </motion.div>
-            )}
+            <EmergencyLocator />
           </motion.div>
         )}
       </div>
