@@ -1,9 +1,28 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, AlertTriangle } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 const HeroSection = () => {
+  const navigate = useNavigate();
+
+  const handleEmergency = () => {
+    const userRole = localStorage.getItem("user_role");
+    
+    if (!userRole) {
+      // Not logged in, clear any stale redirect URL and store the emergency URL
+      localStorage.removeItem("redirect_url");
+      localStorage.setItem("redirect_url", "/patient/emergency");
+      navigate("/login");
+    } else if (userRole === "patient") {
+      // Logged in as patient, go directly to emergency tab
+      navigate("/patient/emergency");
+    } else {
+      // Other roles (doctor, admin) don't have emergency access
+      navigate("/login");
+    }
+  };
+
   return (
     <section className="relative min-h-screen flex items-center overflow-hidden pt-16">
       {/* Background decorations */}
@@ -49,7 +68,7 @@ const HeroSection = () => {
                 <ArrowRight className="ml-1 h-5 w-5" />
               </Button>
             </Link>
-            <Button variant="emergency" size="lg" className="text-base px-8 py-6">
+            <Button variant="emergency" size="lg" className="text-base px-8 py-6" onClick={handleEmergency}>
               <AlertTriangle className="mr-1 h-5 w-5" />
               EMERGENCY: Find Nearest Hospital
             </Button>

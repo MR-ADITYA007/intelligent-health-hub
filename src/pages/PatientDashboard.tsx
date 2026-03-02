@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   History, CalendarPlus, AlertTriangle, Search, Clock,
-  MapPin, Bed, ChevronRight, X, Check, Loader2, FileText,
+  MapPin, Bed, ChevronRight, Check, Loader2, FileText,
   Pill, Stethoscope, TrendingUp
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -12,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-// Import the new Emergency Locator component
+// Your new interactive Emergency Locator map
 import EmergencyLocator from "@/components/EmergencyLocator";
 
 const navItems = [
@@ -41,12 +42,28 @@ const timeSlots = [
 ];
 
 const PatientDashboard = () => {
+  // Friend's routing additions (Kept)
+  const location = useLocation();
+  const navigate = useNavigate();
+  
   const [activeTab, setActiveTab] = useState<"history" | "appointment" | "emergency">("history");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
   const [bookingState, setBookingState] = useState<"idle" | "checking" | "confirmed" | "alternate">("idle");
+
+  // Friend's routing additions (Kept)
+  useEffect(() => {
+    const path = location.pathname;
+    if (path.includes("/appointment")) {
+      setActiveTab("appointment");
+    } else if (path.includes("/emergency")) {
+      setActiveTab("emergency");
+    } else {
+      setActiveTab("history");
+    }
+  }, [location.pathname]);
 
   const filteredHistory = medicalHistory.filter(
     (h) =>
@@ -106,13 +123,13 @@ const PatientDashboard = () => {
         {/* Tab navigation */}
         <div className="flex gap-2 border-b border-border pb-2">
           {[
-            { key: "history" as const, label: "Medical History", icon: History },
-            { key: "appointment" as const, label: "Book Appointment", icon: CalendarPlus },
-            { key: "emergency" as const, label: "Emergency", icon: AlertTriangle },
+            { key: "history" as const, label: "Medical History", icon: History, path: "/patient" },
+            { key: "appointment" as const, label: "Book Appointment", icon: CalendarPlus, path: "/patient/appointment" },
+            { key: "emergency" as const, label: "Emergency", icon: AlertTriangle, path: "/patient/emergency" },
           ].map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => navigate(tab.path)}
               className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
                 activeTab === tab.key
                   ? "bg-card text-primary border border-border border-b-0"
@@ -332,7 +349,7 @@ const PatientDashboard = () => {
           </motion.div>
         )}
 
-        {/* Real Emergency Tab */}
+        {/* Real Emergency Tab (Replaces Friend's Dummy Map) */}
         {activeTab === "emergency" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
             <EmergencyLocator />
