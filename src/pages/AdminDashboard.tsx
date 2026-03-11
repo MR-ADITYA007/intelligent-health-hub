@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   LayoutDashboard, BedDouble, Users, Stethoscope, Brain,
-  Loader2, Check, Plus, Edit, Trash2, X, Search
+  Loader2, Check, Plus, Edit, Trash2, X, Search, AlertCircle
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,34 +18,17 @@ const navItems = [
   { title: "Directory", url: "/admin/directory", icon: Users },
 ];
 
-// Dummy beds
-const initialBeds = Array.from({ length: 24 }, (_, i) => ({
-  id: i + 1,
-  ward: i < 8 ? "ICU" : i < 16 ? "General" : "Emergency",
-  occupied: Math.random() > 0.45,
-  patient: Math.random() > 0.45 ? `Patient-${100 + i}` : null,
-}));
-
 const dummyDoctors = [
   { id: 1, name: "Dr. Sarah Chen", dept: "Cardiology", email: "schen@med.com", phone: "+1-555-0101", status: "Active" },
   { id: 2, name: "Dr. James Wilson", dept: "General Medicine", email: "jwilson@med.com", phone: "+1-555-0102", status: "Active" },
   { id: 3, name: "Dr. Emily Park", dept: "Orthopedics", email: "epark@med.com", phone: "+1-555-0103", status: "On Leave" },
   { id: 4, name: "Dr. Michael Ross", dept: "Dermatology", email: "mross@med.com", phone: "+1-555-0104", status: "Active" },
-  { id: 5, name: "Dr. Aisha Patel", dept: "Neurology", email: "apatel@med.com", phone: "+1-555-0105", status: "Active" },
-  { id: 6, name: "Dr. Robert Kim", dept: "Pediatrics", email: "rkim@med.com", phone: "+1-555-0106", status: "Active" },
-  { id: 7, name: "Dr. Laura Martinez", dept: "Cardiology", email: "lmartinez@med.com", phone: "+1-555-0107", status: "Active" },
 ];
 
 const dummyPatients = [
   { id: 1, name: "John Davis", dept: "Cardiology", age: 45, email: "jdavis@mail.com", phone: "+1-555-0201", status: "Active" },
   { id: 2, name: "Maria Garcia", dept: "Cardiology", age: 62, email: "mgarcia@mail.com", phone: "+1-555-0202", status: "Admitted" },
   { id: 3, name: "Tom Brown", dept: "Emergency", age: 58, email: "tbrown@mail.com", phone: "+1-555-0203", status: "Critical" },
-  { id: 4, name: "Lisa White", dept: "General Medicine", age: 34, email: "lwhite@mail.com", phone: "+1-555-0204", status: "Active" },
-  { id: 5, name: "Robert Kim", dept: "Dermatology", age: 28, email: "rkim2@mail.com", phone: "+1-555-0205", status: "Active" },
-  { id: 6, name: "Sarah Johnson", dept: "Neurology", age: 41, email: "sjohnson@mail.com", phone: "+1-555-0206", status: "Active" },
-  { id: 7, name: "David Chen", dept: "Orthopedics", age: 55, email: "dchen@mail.com", phone: "+1-555-0207", status: "Discharged" },
-  { id: 8, name: "Emma Wilson", dept: "Pediatrics", age: 8, email: "parent@mail.com", phone: "+1-555-0208", status: "Admitted" },
-  { id: 9, name: "Alex Turner", dept: "General Medicine", age: 72, email: "aturner@mail.com", phone: "+1-555-0209", status: "Active" },
 ];
 
 const allDepartments = ["Cardiology", "General Medicine", "Orthopedics", "Dermatology", "Neurology", "Pediatrics", "Emergency"];
@@ -54,10 +37,13 @@ const AdminDashboard = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"overview" | "beds" | "directory">("overview");
-  const [beds, setBeds] = useState(initialBeds);
+  
+  const [beds, setBeds] = useState<any[]>([]); 
+  const [dbError, setDbError] = useState<string | null>(null);
+  
   const [allocatingBed, setAllocatingBed] = useState<number | null>(null);
   const [selectedBedForAllocation, setSelectedBedForAllocation] = useState<number | null>(null);
-  const [allocateForm, setAllocateForm] = useState({ patientName: "" });
+  const [allocateForm, setAllocateForm] = useState({ patientId: "" });
   const [directoryTab, setDirectoryTab] = useState<"patients" | "doctors">("patients");
   const [searchDir, setSearchDir] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
@@ -67,7 +53,6 @@ const AdminDashboard = () => {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState({ name: "", email: "", phone: "", department: "", age: "", status: "Active" });
 
-  // Determine activeTab based on URL path
   useEffect(() => {
     const path = location.pathname;
     if (path.includes("/beds")) {
@@ -79,16 +64,78 @@ const AdminDashboard = () => {
     }
   }, [location.pathname]);
 
+  const fetchLiveBeds = async () => {
+    try {
+      setDbError(null);
+      const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      
+      const response = await fetch(`${API_BASE}/api/beds/status`);
+      
+      if (response.ok) {
+        const liveData = await response.json();
+        setBeds(liveData); 
+      } else {
+        setDbError(`Backend returned error code: ${response.status}. Check your Python console.`);
+      }
+    } catch (error) {
+      console.error("Fetch error:", error);
+      setDbError("Failed to connect to the Python backend. Is uvicorn running?");
+    }
+  };
+
+  useEffect(() => {
+    fetchLiveBeds();
+  }, []);
+
   const totalPatients = patients.length;
   const availableDoctors = doctors.filter(d => d.status === "Active").length;
   const freeBeds = beds.filter(b => !b.occupied).length;
-
   const getDeptCount = (dept: string, list: { dept: string }[]) => list.filter(i => i.dept === dept).length;
+
+  const handleAllocate = async (bedId: number) => {
+    setAllocatingBed(bedId);
+    try {
+      const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      const response = await fetch(`${API_BASE}/api/beds/allocate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bed_id: bedId,
+          patient_id: parseInt(allocateForm.patientId) || 999 
+        })
+      });
+      const result = await response.json();
+      if (response.ok) {
+        fetchLiveBeds(); 
+      } else {
+        alert(`Allocation Failed: ${result.detail}`);
+      }
+    } catch (error) {
+      alert("Network error.");
+    } finally {
+      setAllocatingBed(null);
+      setAllocateForm({ patientId: "" });
+      setSelectedBedForAllocation(null);
+    }
+  };
+
+  const handleDeallocate = async (bedId: number) => {
+    try {
+      const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      const response = await fetch(`${API_BASE}/api/beds/release/${bedId}`, {
+        method: 'POST',
+      });
+      if (response.ok) {
+        fetchLiveBeds(); 
+      }
+    } catch (error) {
+      console.error("Release error:", error);
+    }
+  };
 
   const handleAddOrEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.email || !formData.phone || !formData.department) return;
-
     if (editingId !== null) {
       if (directoryTab === "patients") {
         setPatients(patients.map(p => p.id === editingId ? { ...p, name: formData.name, email: formData.email, phone: formData.phone, dept: formData.department, age: parseInt(formData.age) || 0, status: formData.status } : p));
@@ -125,29 +172,8 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleAllocate = (bedId: number) => {
-    setAllocatingBed(bedId);
-    setTimeout(() => {
-      setBeds(prev => prev.map(b => b.id === bedId ? { ...b, occupied: true, patient: allocateForm.patientName || "New Patient" } : b));
-      setAllocatingBed(null);
-      setAllocateForm({ patientName: "" });
-      setSelectedBedForAllocation(null);
-    }, 2000);
-  };
-
-  const handleDeallocate = (bedId: number) => {
-    setBeds(prev => prev.map(b => b.id === bedId ? { ...b, occupied: false, patient: null } : b));
-  };
-
-  const filteredDoctors = doctors.filter(d =>
-    (selectedDept === "All" || d.dept === selectedDept) &&
-    d.name.toLowerCase().includes(searchDir.toLowerCase())
-  );
-
-  const filteredPatients = patients.filter(p =>
-    (selectedDept === "All" || p.dept === selectedDept) &&
-    p.name.toLowerCase().includes(searchDir.toLowerCase())
-  );
+  const filteredDoctors = doctors.filter(d => (selectedDept === "All" || d.dept === selectedDept) && d.name.toLowerCase().includes(searchDir.toLowerCase()));
+  const filteredPatients = patients.filter(p => (selectedDept === "All" || p.dept === selectedDept) && p.name.toLowerCase().includes(searchDir.toLowerCase()));
 
   return (
     <DashboardLayout navItems={navItems} role="Admin">
@@ -159,7 +185,6 @@ const AdminDashboard = () => {
           <p className="text-muted-foreground mt-1">System-wide monitoring and resource management</p>
         </div>
 
-        {/* Tab nav */}
         <div className="flex gap-2 border-b border-border pb-2">
           {[
             { key: "overview" as const, label: "Overview", icon: LayoutDashboard, path: "/admin" },
@@ -168,11 +193,9 @@ const AdminDashboard = () => {
           ].map((tab) => (
             <button
               key={tab.key}
-              onClick={() => { navigate(tab.path); setSearchDir(""); setSelectedDept("All"); setSelectedBedForAllocation(null); setAllocateForm({ patientName: "" }); }}
+              onClick={() => navigate(tab.path)}
               className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
-                activeTab === tab.key
-                  ? "bg-card text-primary border border-border border-b-0"
-                  : "text-muted-foreground hover:text-foreground"
+                activeTab === tab.key ? "bg-card text-primary border border-border border-b-0" : "text-muted-foreground hover:text-foreground"
               }`}
             >
               <tab.icon className="h-4 w-4" />
@@ -181,7 +204,7 @@ const AdminDashboard = () => {
           ))}
         </div>
 
-        {/* Overview */}
+        {/* OVERVIEW TAB RE-ADDED */}
         {activeTab === "overview" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -206,7 +229,6 @@ const AdminDashboard = () => {
               ))}
             </div>
 
-            {/* Department summary */}
             <Card className="border-border">
               <CardHeader>
                 <CardTitle className="text-lg">Department Overview</CardTitle>
@@ -228,12 +250,32 @@ const AdminDashboard = () => {
           </motion.div>
         )}
 
-        {/* Bed Management */}
+        {/* BEDS TAB */}
         {activeTab === "beds" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+            
+            {dbError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg flex items-center gap-3">
+                <AlertCircle className="h-6 w-6" />
+                <div>
+                  <h3 className="font-bold">Database Connection Failed</h3>
+                  <p className="text-sm">{dbError}</p>
+                </div>
+              </div>
+            )}
+
+            {!dbError && beds.length === 0 && (
+              <div className="p-8 text-center text-muted-foreground flex flex-col items-center">
+                <Loader2 className="h-8 w-8 animate-spin mb-4" />
+                <p>Loading real-time beds from PostgreSQL...</p>
+              </div>
+            )}
+
             {["ICU", "General", "Emergency"].map(ward => {
               const wardBeds = beds.filter(b => b.ward === ward);
               const wardFree = wardBeds.filter(b => !b.occupied).length;
+              if (wardBeds.length === 0) return null;
+
               return (
                 <Card key={ward} className="border-border">
                   <CardHeader className="pb-3">
@@ -248,9 +290,7 @@ const AdminDashboard = () => {
                         <div
                           key={bed.id}
                           className={`relative group rounded-lg p-3 text-center text-xs border transition-all ${
-                            bed.occupied
-                              ? "bg-emergency/10 border-emergency/30 text-emergency"
-                              : "bg-success/10 border-success/30 text-success cursor-pointer hover:bg-success/20"
+                            bed.occupied ? "bg-emergency/10 border-emergency/30 text-emergency" : "bg-success/10 border-success/30 text-success cursor-pointer hover:bg-success/20"
                           }`}
                           onClick={() => !bed.occupied && setSelectedBedForAllocation(bed.id)}
                         >
@@ -258,15 +298,8 @@ const AdminDashboard = () => {
                           <p className="font-bold">#{bed.id}</p>
                           {bed.occupied ? (
                             <div>
-                              <p className="text-[9px] truncate text-foreground">{bed.patient}</p>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-5 text-[10px] text-emergency mt-1 p-0"
-                                onClick={() => handleDeallocate(bed.id)}
-                              >
-                                Release
-                              </Button>
+                              <p className="text-[9px] truncate text-foreground font-semibold">Pt. ID: {bed.patient}</p>
+                              <Button size="sm" variant="ghost" className="h-5 text-[10px] text-emergency mt-1 p-0" onClick={() => handleDeallocate(bed.id)}>Release</Button>
                             </div>
                           ) : selectedBedForAllocation === bed.id ? (
                             <div className="mt-1">
@@ -274,20 +307,8 @@ const AdminDashboard = () => {
                                 <Loader2 className="h-4 w-4 animate-spin mx-auto text-primary" />
                               ) : (
                                 <div className="space-y-1">
-                                  <Input
-                                    placeholder="Patient"
-                                    className="h-5 text-[10px] px-1"
-                                    value={allocateForm.patientName}
-                                    onChange={(e) => setAllocateForm({ patientName: e.target.value })}
-                                    onClick={(e) => e.stopPropagation()}
-                                  />
-                                  <Button
-                                    size="sm"
-                                    className="h-5 text-[10px] w-full p-0"
-                                    onClick={() => handleAllocate(bed.id)}
-                                  >
-                                    Allocate
-                                  </Button>
+                                  <Input type="number" placeholder="ID" className="h-5 text-[10px] px-1" value={allocateForm.patientId} onChange={(e) => setAllocateForm({ patientId: e.target.value })} onClick={(e) => e.stopPropagation()} />
+                                  <Button size="sm" className="h-5 text-[10px] w-full p-0" onClick={() => handleAllocate(bed.id)}>Allocate</Button>
                                 </div>
                               )}
                             </div>
@@ -304,24 +325,15 @@ const AdminDashboard = () => {
           </motion.div>
         )}
 
-        {/* Master Directory */}
+        {/* DIRECTORY TAB RE-ADDED */}
         {activeTab === "directory" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-            {/* Sub tabs */}
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div className="flex gap-2">
-                <Button
-                  variant={directoryTab === "patients" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => { setDirectoryTab("patients"); setSearchDir(""); setSelectedDept("All"); }}
-                >
+                <Button variant={directoryTab === "patients" ? "default" : "outline"} size="sm" onClick={() => { setDirectoryTab("patients"); setSearchDir(""); setSelectedDept("All"); }}>
                   <Users className="h-4 w-4 mr-1" /> Patients ({patients.length})
                 </Button>
-                <Button
-                  variant={directoryTab === "doctors" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => { setDirectoryTab("doctors"); setSearchDir(""); setSelectedDept("All"); }}
-                >
+                <Button variant={directoryTab === "doctors" ? "default" : "outline"} size="sm" onClick={() => { setDirectoryTab("doctors"); setSearchDir(""); setSelectedDept("All"); }}>
                   <Stethoscope className="h-4 w-4 mr-1" /> Doctors ({doctors.length})
                 </Button>
               </div>
@@ -330,7 +342,6 @@ const AdminDashboard = () => {
               </Button>
             </div>
 
-            {/* Add form */}
             {showAddForm && (
               <Card className="border-border">
                 <CardHeader className="pb-2">
@@ -388,41 +399,29 @@ const AdminDashboard = () => {
               </Card>
             )}
 
-            {/* Filters */}
             <div className="flex flex-wrap gap-3 items-center">
               <div className="relative flex-1 max-w-xs">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input placeholder="Search..." className="pl-9 h-9" value={searchDir} onChange={(e) => setSearchDir(e.target.value)} />
               </div>
-              <select
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"
-                value={selectedDept}
-                onChange={(e) => setSelectedDept(e.target.value)}
-              >
+              <select className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground" value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
                 <option value="All">All Departments</option>
                 {allDepartments.map(d => <option key={d} value={d}>{d} ({getDeptCount(d, directoryTab === "patients" ? patients : doctors)})</option>)}
               </select>
             </div>
 
-            {/* Department counts */}
             <div className="flex flex-wrap gap-2">
               {allDepartments.map(dept => {
                 const count = getDeptCount(dept, directoryTab === "patients" ? patients : doctors);
                 if (count === 0) return null;
                 return (
-                  <Badge
-                    key={dept}
-                    variant="secondary"
-                    className={`cursor-pointer ${selectedDept === dept ? "bg-primary text-primary-foreground" : ""}`}
-                    onClick={() => setSelectedDept(selectedDept === dept ? "All" : dept)}
-                  >
+                  <Badge key={dept} variant="secondary" className={`cursor-pointer ${selectedDept === dept ? "bg-primary text-primary-foreground" : ""}`} onClick={() => setSelectedDept(selectedDept === dept ? "All" : dept)}>
                     {dept}: {count}
                   </Badge>
                 );
               })}
             </div>
 
-            {/* Table */}
             <Card className="border-border overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -446,31 +445,20 @@ const AdminDashboard = () => {
                         <td className="p-3 text-muted-foreground hidden sm:table-cell">{item.phone}</td>
                         {directoryTab === "patients" && <td className="p-3 text-muted-foreground">{"age" in item ? (item as { age: number }).age : ""}</td>}
                         <td className="p-3">
-                          <Badge variant={
-                            item.status === "Active" ? "secondary" :
-                            item.status === "Critical" ? "destructive" :
-                            item.status === "Admitted" ? "default" : "outline"
-                          } className="text-[10px]">
+                          <Badge variant={item.status === "Active" ? "secondary" : item.status === "Critical" ? "destructive" : item.status === "Admitted" ? "default" : "outline"} className="text-[10px]">
                             {item.status}
                           </Badge>
                         </td>
                         <td className="p-3 text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(item.id)}>
-                              <Edit className="h-3 w-3" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDelete(item.id)}>
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(item.id)}><Edit className="h-3 w-3" /></Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDelete(item.id)}><Trash2 className="h-3 w-3" /></Button>
                           </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {((directoryTab === "patients" ? filteredPatients : filteredDoctors).length === 0) && (
-                  <p className="text-center py-8 text-muted-foreground">No records found</p>
-                )}
               </div>
             </Card>
           </motion.div>

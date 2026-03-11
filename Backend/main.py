@@ -6,10 +6,18 @@ from routers import patient_routes, bed_routes, emergency_routes, appointment_ro
 
 app = FastAPI(title="Intelligent Health Hub API", version="1.0")
 
-# Allow the React frontend to securely talk to this API
+# 🚀 BULLETPROOF CORS SETTINGS: 
+# Explicitly allow the React Vite server to connect without security blocks.
+# 🚀 BULLETPROOF CORS SETTINGS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=[
+        "http://localhost:5173", 
+        "http://127.0.0.1:5173",
+        "http://localhost:8080",    # Add this line!
+        "http://127.0.0.1:8080"     # Add this line!
+    ], 
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
