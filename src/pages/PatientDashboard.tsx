@@ -15,6 +15,9 @@ import { Badge } from "@/components/ui/badge";
 
 import EmergencyLocator from "@/components/EmergencyLocator";
 
+// --- NEW: Import the Auth Memory ---
+import { useAuth } from "@/contexts/AuthContext";
+
 const navItems = [
   { title: "Medical History", url: "/patient", icon: History },
   { title: "Book Appointment", url: "/patient/appointment", icon: CalendarPlus },
@@ -38,6 +41,9 @@ const PatientDashboard = () => {
   const location = useLocation();
   const navigate = useNavigate();
   
+  // --- NEW: Grab the Real Logged-In User ---
+  const { currentUser } = useAuth();
+
   const [activeTab, setActiveTab] = useState<"history" | "appointment" | "profile" | "emergency">("history");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState("");
@@ -69,17 +75,19 @@ const PatientDashboard = () => {
 
   // Fetch History OR Profile based on active tab
   useEffect(() => {
+    if (!currentUser?.uid) return;
+
     if (activeTab === "history") {
       setIsLoadingHistory(true);
-      fetch(`http://127.0.0.1:8000/api/patients/4/history`)
+      // --- NEW FIX: Fetching straight from the appointments table! ---
+      fetch(`http://127.0.0.1:8000/api/appointments/patient/${currentUser.uid}`)
         .then(res => res.json())
         .then(data => setHistoryData(data.data && data.data.length > 0 ? data.data : medicalHistory))
         .catch(() => setHistoryData(medicalHistory))
         .finally(() => setIsLoadingHistory(false));
     } 
     else if (activeTab === "profile") {
-      // Auto-load profile data when they open the tab
-      fetch(`http://127.0.0.1:8000/api/patients/4/profile`)
+      fetch(`http://127.0.0.1:8000/api/patients/${currentUser.uid}/profile`)
         .then(res => res.json())
         .then(data => {
           if (data.full_name) setFullName(data.full_name);
@@ -90,7 +98,7 @@ const PatientDashboard = () => {
         })
         .catch(err => console.error("Could not fetch profile", err));
     }
-  }, [activeTab]);
+  }, [activeTab, currentUser?.uid]);
 
   const filteredHistory = historyData.filter(
     (h) =>
@@ -102,10 +110,11 @@ const PatientDashboard = () => {
   // --- SAVE PROFILE LOGIC ---
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser?.uid) return;
+
     setIsSavingProfile(true);
     try {
-      // We will update the backend to accept this new comprehensive payload next!
-      const res = await fetch(`http://127.0.0.1:8000/api/patients/4/update-profile`, {
+      const res = await fetch(`http://127.0.0.1:8000/api/patients/${currentUser.uid}/update-profile`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
@@ -129,6 +138,7 @@ const PatientDashboard = () => {
   // --- BOOKING LOGIC (AI Hidden from User) ---
   const handleBookAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser?.uid) return;
     
     if (!dob || !patientDistance) {
       alert("Please complete your Medical Profile (DOB & Distance) before booking so we can optimize your appointment.");
@@ -143,8 +153,8 @@ const PatientDashboard = () => {
       const appointmentDate = new Date(selectedDate);
       const leadTimeDays = Math.ceil(Math.abs(appointmentDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-      // Ask AI behind the scenes
-      const mlResponse = await fetch(`http://127.0.0.1:8000/api/ml/4/predict-noshow`, {
+      // 1. Ask the AI first...
+      const mlResponse = await fetch(`http://127.0.0.1:8000/api/ml/${currentUser.uid}/predict-noshow`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lead_time_days: leadTimeDays }),
@@ -152,11 +162,28 @@ const PatientDashboard = () => {
 
       const mlData = await mlResponse.json();
       
-      setTimeout(() => {
-        if (mlData.prediction === "No-Show") {
-          setBookingState("alternate");
-        } else {
+      setTimeout(async () => {
+        try {
+          const combinedDateTime = `${selectedDate} ${selectedTime}`; 
+
+          await fetch("http://127.0.0.1:8000/api/appointments/book", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              patient_id: currentUser.uid,
+              doctor_id: "1", 
+              appointment_time: combinedDateTime,
+              status: "scheduled",
+              priority_score: 1, 
+              no_show_risk: mlData.no_show_risk_percentage || 0
+            })
+          });
+
+          // ALWAYS show confirmed to the patient. The AI risk is secretly sent to Admin!
           setBookingState("confirmed");
+          
+        } catch (err) {
+          console.error("Failed to save booking to DB");
         }
       }, 2000);
     } catch (error) {
@@ -176,7 +203,7 @@ const PatientDashboard = () => {
       <div className="max-w-6xl mx-auto space-y-6">
         <div>
           <h1 className="text-2xl md:text-3xl font-display font-bold text-foreground">
-            Welcome back, <span className="text-gradient">{fullName || "Alex"}</span>
+            Welcome back, <span className="text-gradient">{fullName || currentUser?.email?.split('@')[0] || "Guest"}</span>
           </h1>
           <p className="text-muted-foreground mt-1">Manage your health records and appointments</p>
         </div>
@@ -351,11 +378,12 @@ const PatientDashboard = () => {
                 </motion.div>
               )}
 
+              {/* Note: This alternate UI is kept around just in case you want to use it for something else later, but it won't fire anymore! */}
               {bookingState === "alternate" && (
                 <motion.div key="alternate" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-md mx-auto text-center py-16">
                   <div className="h-16 w-16 rounded-full bg-warning/10 flex items-center justify-center mx-auto mb-4"><AlertTriangle className="h-8 w-8 text-warning" /></div>
                   <h3 className="text-xl font-display font-bold text-foreground mb-2">Alternate Time Suggested</h3>
-                  <p className="text-muted-foreground text-sm mb-1">Your requested slot is unavailable. We suggest:</p>
+                  <p className="text-muted-foreground text-sm mb-1">Your requested slot is high risk. We suggest:</p>
                   <p className="font-semibold text-foreground">{selectedDept} · {selectedDate} · 03:00 PM</p>
                   <div className="flex gap-3 justify-center mt-6">
                     <Button variant="hero" onClick={() => setBookingState("confirmed")}>Accept Alternate</Button>
@@ -367,7 +395,7 @@ const PatientDashboard = () => {
           </motion.div>
         )}
 
-        {/* --- HISTORY & EMERGENCY TABS REMAIN UNCHANGED --- */}
+        {/* --- HISTORY TAB (WITH NEW WARNING FEATURE!) --- */}
         {activeTab === "history" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
             {isLoadingHistory ? (
@@ -377,25 +405,59 @@ const PatientDashboard = () => {
                </div>
             ) : (
               <div className="grid gap-3">
-                {filteredHistory.map((record) => (
-                  <Card key={record.record_id || record.id} className="border-border">
-                    <CardContent className="p-4">
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                        <div className="flex items-start gap-3">
-                          <div className="h-10 w-10 rounded-lg bg-secondary flex items-center justify-center shrink-0 mt-0.5"><Stethoscope className="h-5 w-5 text-primary" /></div>
-                          <div>
-                            <p className="font-semibold text-foreground">{record.diagnosis}</p>
-                            <p className="text-sm text-muted-foreground">{record.doctor || "General Hospital"} · {record.department || "General"}</p>
+                {filteredHistory.map((record) => {
+                  
+                  // --- NEW: CATCH ADMIN DISMISSALS ---
+                  if (record.status === "reschedule_requested") {
+                    return (
+                      <Card key={record.record_id || record.id} className="border-destructive bg-destructive/5">
+                        <CardContent className="p-4">
+                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                            <div className="flex items-start gap-3">
+                              <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center shrink-0 mt-0.5">
+                                <AlertTriangle className="h-5 w-5 text-destructive" />
+                              </div>
+                              <div>
+                                <p className="font-bold text-destructive">Action Required: Reschedule Needed</p>
+                                <p className="text-sm text-foreground mt-1">
+                                  Our system has found the appointment scheduled for <span className="font-bold">{record.department || "General"}</span> as a high no-show risk. Please reschedule.
+                                </p>
+                              </div>
+                            </div>
+                            <Button variant="outline" className="border-destructive text-destructive hover:bg-destructive/10 whitespace-nowrap" onClick={() => setActiveTab("appointment")}>
+                              Reschedule Now
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  }
+
+                  // Default view for normal records
+                  return (
+                    <Card key={record.record_id || record.id} className="border-border">
+                      <CardContent className="p-4">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                          <div className="flex items-start gap-3">
+                            <div className="h-10 w-10 rounded-lg bg-secondary flex items-center justify-center shrink-0 mt-0.5">
+                              <Stethoscope className="h-5 w-5 text-primary" />
+                            </div>
+                            <div>
+                              <p className="font-semibold text-foreground">{record.diagnosis || "Consultation"}</p>
+                              <p className="text-sm text-muted-foreground">{record.doctor || "General Hospital"} · {record.department || "General"}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 md:flex-col md:items-end">
+                            <Badge variant={record.status === 'scheduled' || record.status === 'confirmed' ? 'default' : 'secondary'}>
+                              {record.status || "Completed"}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">{record.date || record.appointment_time}</span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3 md:flex-col md:items-end">
-                          <Badge variant="secondary">{record.status || "Completed"}</Badge>
-                          <span className="text-xs text-muted-foreground">{record.date}</span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </motion.div>

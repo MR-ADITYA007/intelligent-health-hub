@@ -9,7 +9,7 @@ import { toast } from "sonner";
 
 // --- FIREBASE IMPORT ---
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/lib/firebase"; // Assuming you have the @ alias setup, or use "../lib/firebase"
+import { auth } from "@/lib/firebase"; 
 
 type Role = "patient" | "doctor" | "admin";
 
@@ -51,7 +51,24 @@ const Signup = () => {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // 3. Success! Save role locally (Person 3 will link this to Supabase later)
+      // --- NEW: Sync user to Supabase Database via Python Backend ---
+      try {
+        await fetch("http://127.0.0.1:8000/api/patients/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            uid: user.uid, 
+            email: user.email, 
+            role: selectedRole 
+          }),
+        });
+      } catch (syncError) {
+        console.error("Warning: Could not sync to Supabase right now", syncError);
+        // We still let them log in, but log the error for the admins!
+      }
+      // -------------------------------------------------------------
+
+      // 3. Success! Save role locally (Person 3 will link this fully to Supabase later)
       localStorage.setItem("user_role", selectedRole);
       
       toast.success("Account created successfully!", {
