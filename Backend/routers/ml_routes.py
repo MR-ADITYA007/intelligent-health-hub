@@ -38,8 +38,8 @@ class BookingData(BaseModel):
 # ==========================================
 # 3. THE ULTIMATE PREDICTION ENDPOINT
 # ==========================================
-@router.post("/{patient_id}/predict-noshow")
-def predict_noshow(patient_id: int, data: BookingData):
+@router.post("/{uid}/predict-noshow")
+def predict_noshow(uid: str, data: BookingData):
     conn = None
     cursor = None
     try:
@@ -48,15 +48,16 @@ def predict_noshow(patient_id: int, data: BookingData):
         cursor = conn.cursor()
         
         # The SQL Magic: Get Age, Distance, AND Count their previous ghostings all at once!
+        # (Updated to use 'uid' instead of 'user_id' for Firebase compatibility)
         query = """
             SELECT 
                 p.age, 
                 p.distance_miles,
-                (SELECT COUNT(*) FROM appointments a WHERE a.patient_id = p.user_id AND a.status = 'no_show') as previous_no_shows
+                (SELECT COUNT(*) FROM appointments a WHERE a.patient_id = p.uid AND a.status IN ('No-Show', 'no_show', 'No Show')) as previous_no_shows
             FROM patient_profiles p
-            WHERE p.user_id = %s;
+            WHERE p.uid = %s;
         """
-        cursor.execute(query, (patient_id,))
+        cursor.execute(query, (uid,))
         db_data = cursor.fetchone()
         
         if not db_data:
@@ -66,6 +67,10 @@ def predict_noshow(patient_id: int, data: BookingData):
         distance_miles = db_data['distance_miles']
         previous_no_shows = db_data['previous_no_shows']
         
+        # Extra safety check: Prevent the AI from crashing if they haven't filled out their profile
+        if age is None or distance_miles is None:
+            raise HTTPException(status_code=400, detail="Age and Distance must be filled in to predict no-shows.")
+
         # --- PART B: RUN THE MACHINE LEARNING MODEL ---
         # We arrange the 4 clues in the EXACT order the AI studied them
         patient_features = np.array([[
@@ -81,11 +86,13 @@ def predict_noshow(patient_id: int, data: BookingData):
         # Ask the AI for its prediction
         prediction = model.predict(patient_features_scaled)[0]
         probability = model.predict_proba(patient_features_scaled)[0]
+        
+        # Probability[0] is usually the chance of class 0 (No-Show)
         no_show_risk = probability[0] * 100 
         
         return {
-            "patient_id": patient_id,
-            "prediction": "Show" if prediction == 1 else "No-Show",
+            "patient_id": uid,
+            "prediction": "Show-Up" if prediction == 1 else "No-Show",
             "no_show_risk_percentage": round(no_show_risk, 2),
             "data_used_by_ai": {
                 "age": age,

@@ -1,68 +1,110 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from datetime import datetime
-import heapq  # THIS is the DSA magic for Priority Queues!
+import psycopg2
+import psycopg2.extras
+import os
+import heapq  
+from dotenv import load_dotenv
+
+load_dotenv()
+DB_URL = os.getenv("DATABASE_URL")
 
 router = APIRouter(prefix="/api/appointments", tags=["Appointment Scheduling"])
+
+def get_db_connection():
+    return psycopg2.connect(DB_URL, cursor_factory=psycopg2.extras.RealDictCursor)
 
 # ==========================================
 # DSA CONCEPT: PRIORITY QUEUE (Max-Heap)
 # ==========================================
-# We use this list to store our live waiting room queue.
 waiting_room_queue = []
-# We use a counter to handle ties (if two priority 10s arrive, whoever came first goes first)
 entry_counter = 0 
 
 class QueueRequest(BaseModel):
     patient_name: str
-    priority_score: int # 1 (Routine) to 10 (Emergency)
+    priority_score: int 
 
 @router.post("/waiting-room/add")
 def add_patient_to_queue(request: QueueRequest):
     global entry_counter
-    
-    # Python's heapq is naturally a "Min-Heap" (pops the lowest number first).
-    # To make it a "Max-Heap" (so Priority 10 pops BEFORE Priority 1), 
-    # we multiply the score by -1 before storing it!
-    heapq.heappush(
-        waiting_room_queue, 
-        (-request.priority_score, entry_counter, request.patient_name)
-    )
+    heapq.heappush(waiting_room_queue, (-request.priority_score, entry_counter, request.patient_name))
     entry_counter += 1
-    
-    return {
-        "message": f"{request.patient_name} added to the live waiting room queue.",
-        "current_queue_size": len(waiting_room_queue)
-    }
+    return {"message": f"{request.patient_name} added.", "current_queue_size": len(waiting_room_queue)}
 
 @router.get("/waiting-room/call-next")
 def call_next_patient():
     if not waiting_room_queue:
-        return {"message": "The waiting room is empty! Doctors can take a break."}
-    
-    # This instantly pops the patient with the highest priority score in O(1) time
+        return {"message": "The waiting room is empty!"}
     neg_priority, count, patient_name = heapq.heappop(waiting_room_queue)
-    actual_priority = -neg_priority # Convert it back to a positive number
-    
-    return {
-        "message": "Next patient called to the doctor's office!",
-        "patient_name": patient_name,
-        "priority_score": actual_priority
-    }
+    return {"message": "Next patient called!", "patient_name": patient_name, "priority_score": -neg_priority}
 
 # ==========================================
-# The standard booking route (Waiting for ML)
+# ACTUAL DATABASE BOOKING ROUTE 
 # ==========================================
-class AppointmentRequest(BaseModel):
-    patient_id: int
-    doctor_id: int
-    appointment_time: datetime
-    priority_score: int = 1 
+class AppointmentCreate(BaseModel):
+    patient_id: str          
+    doctor_id: str = "1"     
+    appointment_time: str    
+    status: str = "scheduled"
+    priority_score: int = 1  
+    no_show_risk: float = 0.0
 
 @router.post("/book")
-def book_appointment(request: AppointmentRequest):
-    # NOTE FOR ML PHASE: We will add the Logistic Regression overbooking logic here soon!
-    return {
-        "message": "Appointment scheduled in database.",
-        "details": {"patient_id": request.patient_id, "time": request.appointment_time}
-    }
+def book_appointment(data: AppointmentCreate):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        query = """
+            INSERT INTO appointments (patient_id, doctor_id, appointment_time, status, priority_score, no_show_risk)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING appointment_id;
+        """
+        cursor.execute(query, (data.patient_id, data.doctor_id, data.appointment_time, data.status, data.priority_score, data.no_show_risk))
+        result = cursor.fetchone()
+        conn.commit()
+        return {"status": "success", "appointment_id": result['appointment_id'] if result else None}
+    except Exception as e:
+        if conn: conn.rollback()
+        raise HTTPException(status_code=500, detail="Failed to book")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+# ==========================================
+# GET APPOINTMENTS FOR PATIENT HISTORY TAB
+# ==========================================
+@router.get("/patient/{patient_id}")
+def get_patient_appointments(patient_id: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Formatted to perfectly match your React History cards!
+        query = """
+            SELECT 
+                appointment_id as id, 
+                CAST(appointment_time AS TEXT) as date, 
+                status, 
+                'Dr. ' || doctor_id as doctor, 
+                'General' as department, 
+                'Consultation' as diagnosis
+            FROM appointments 
+            WHERE patient_id = %s 
+            ORDER BY appointment_time DESC;
+        """
+        cursor.execute(query, (patient_id,))
+        records = cursor.fetchall()
+        
+        return {"status": "success", "data": records}
+        
+    except Exception as e:
+        print(f"🔥 Error fetching history: {e}")
+        return {"status": "error", "data": []}
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()

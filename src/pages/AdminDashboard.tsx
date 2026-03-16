@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, BedDouble, Users, Stethoscope, Brain,
-  Loader2, Check, Plus, Edit, Trash2, X, Search, AlertCircle
+  Loader2, Check, Plus, Edit, Trash2, X, Search, AlertCircle,
+  ShieldAlert, AlertTriangle, Clock
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +15,7 @@ import { Label } from "@/components/ui/label";
 
 const navItems = [
   { title: "Overview", url: "/admin", icon: LayoutDashboard },
+  { title: "AI Triage", url: "/admin/triage", icon: Brain }, // --- NEW: AI Triage Tab ---
   { title: "Bed Management", url: "/admin/beds", icon: BedDouble },
   { title: "Directory", url: "/admin/directory", icon: Users },
 ];
@@ -36,11 +38,11 @@ const allDepartments = ["Cardiology", "General Medicine", "Orthopedics", "Dermat
 const AdminDashboard = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"overview" | "beds" | "directory">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "triage" | "beds" | "directory">("overview");
   
+  // --- EXISTING STATES ---
   const [beds, setBeds] = useState<any[]>([]); 
   const [dbError, setDbError] = useState<string | null>(null);
-  
   const [allocatingBed, setAllocatingBed] = useState<number | null>(null);
   const [selectedBedForAllocation, setSelectedBedForAllocation] = useState<number | null>(null);
   const [allocateForm, setAllocateForm] = useState({ patientId: "" });
@@ -53,12 +55,31 @@ const AdminDashboard = () => {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState({ name: "", email: "", phone: "", department: "", age: "", status: "Active" });
 
+  // --- NEW: AI TRIAGE STATES ---
+  const [appointments, setAppointments] = useState<any[]>([]);
+
+  // Fetch ML Appointments
+  const fetchAppointments = async () => {
+    try {
+      const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      const res = await fetch(`${API_BASE}/api/admin/appointments`);
+      const data = await res.json();
+      if (data.status === "success") {
+        setAppointments(data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch appointments", err);
+    }
+  };
+
   useEffect(() => {
     const path = location.pathname;
     if (path.includes("/beds")) {
       setActiveTab("beds");
     } else if (path.includes("/directory")) {
       setActiveTab("directory");
+    } else if (path.includes("/triage")) {
+      setActiveTab("triage");
     } else {
       setActiveTab("overview");
     }
@@ -68,9 +89,7 @@ const AdminDashboard = () => {
     try {
       setDbError(null);
       const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-      
       const response = await fetch(`${API_BASE}/api/beds/status`);
-      
       if (response.ok) {
         const liveData = await response.json();
         setBeds(liveData); 
@@ -85,8 +104,26 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     fetchLiveBeds();
+    fetchAppointments(); // Fetch AI appointments on load
   }, []);
 
+  // --- NEW: Handle Admin ML Triage Actions ---
+  const handleTriageAction = async (appointmentId: number, actionType: "confirm" | "double_book" | "dismiss") => {
+    try {
+      const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      await fetch(`${API_BASE}/api/admin/appointments/${appointmentId}/action`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: actionType }),
+      });
+      // Refresh the list to remove the appointment we just processed
+      fetchAppointments();
+    } catch (err) {
+      console.error("Action failed", err);
+    }
+  };
+
+  // --- EXISTING LOGIC ---
   const totalPatients = patients.length;
   const availableDoctors = doctors.filter(d => d.status === "Active").length;
   const freeBeds = beds.filter(b => !b.occupied).length;
@@ -185,16 +222,17 @@ const AdminDashboard = () => {
           <p className="text-muted-foreground mt-1">System-wide monitoring and resource management</p>
         </div>
 
-        <div className="flex gap-2 border-b border-border pb-2">
+        <div className="flex gap-2 border-b border-border pb-2 overflow-x-auto">
           {[
             { key: "overview" as const, label: "Overview", icon: LayoutDashboard, path: "/admin" },
+            { key: "triage" as const, label: "AI Triage", icon: Brain, path: "/admin/triage" }, // --- NEW TAB ---
             { key: "beds" as const, label: "Bed Management", icon: BedDouble, path: "/admin/beds" },
             { key: "directory" as const, label: "Master Directory", icon: Users, path: "/admin/directory" },
           ].map((tab) => (
             <button
               key={tab.key}
               onClick={() => navigate(tab.path)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors whitespace-nowrap ${
                 activeTab === tab.key ? "bg-card text-primary border border-border border-b-0" : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -204,7 +242,7 @@ const AdminDashboard = () => {
           ))}
         </div>
 
-        {/* OVERVIEW TAB RE-ADDED */}
+        {/* OVERVIEW TAB */}
         {activeTab === "overview" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -212,7 +250,7 @@ const AdminDashboard = () => {
                 { icon: Users, label: "Total Patients", value: totalPatients.toString(), color: "text-primary" },
                 { icon: Stethoscope, label: "Available Doctors", value: availableDoctors.toString(), color: "text-accent" },
                 { icon: BedDouble, label: "Free Beds", value: `${freeBeds}/${beds.length}`, color: "text-success" },
-                { icon: Brain, label: "Predicted No-Shows", value: "12%", color: "text-warning", special: true },
+                { icon: Brain, label: "Pending AI Triage", value: appointments.length.toString(), color: "text-warning", special: true }, // Updated to show actual pending appointments!
               ].map((stat) => (
                 <Card key={stat.label} className={`border-border ${stat.special ? "ring-1 ring-warning/30" : ""}`}>
                   <CardContent className="p-4 flex items-center gap-3">
@@ -222,7 +260,7 @@ const AdminDashboard = () => {
                     <div>
                       <p className="text-2xl font-bold text-foreground">{stat.value}</p>
                       <p className="text-xs text-muted-foreground">{stat.label}</p>
-                      {stat.special && <p className="text-[10px] text-warning font-medium">ML Prediction</p>}
+                      {stat.special && <p className="text-[10px] text-warning font-medium">Needs Review</p>}
                     </div>
                   </CardContent>
                 </Card>
@@ -247,6 +285,78 @@ const AdminDashboard = () => {
                 </div>
               </CardContent>
             </Card>
+          </motion.div>
+        )}
+
+        {/* --- NEW: AI TRIAGE TAB --- */}
+        {activeTab === "triage" && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+             {appointments.length === 0 ? (
+               <Card className="border-border border-dashed bg-muted/30">
+                 <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+                    <Check className="h-12 w-12 text-success/50 mb-4" />
+                    <h3 className="text-xl font-display font-bold text-foreground mb-2">You're all caught up!</h3>
+                    <p className="text-muted-foreground">No pending appointments require ML triage review right now.</p>
+                 </CardContent>
+               </Card>
+             ) : (
+              <div className="grid gap-4">
+                {appointments.map((apt) => (
+                  <Card key={apt.appointment_id} className="border-border overflow-hidden">
+                    <div className={`h-1 w-full ${apt.no_show_risk > 50 ? 'bg-destructive' : apt.no_show_risk > 20 ? 'bg-warning' : 'bg-success'}`} />
+                    <CardContent className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                      
+                      {/* Patient Info */}
+                      <div className="flex-1">
+                        <h3 className="font-bold text-lg text-foreground">{apt.full_name || "Unknown Patient"}</h3>
+                        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground mt-2">
+                          <div className="flex items-center gap-1.5">
+                            <Clock className="h-4 w-4" />
+                            <span>{apt.appointment_time}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <Stethoscope className="h-4 w-4" />
+                            <span>Dr. {apt.doctor_id}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* ML Risk Badge */}
+                      <div className="flex flex-col items-start md:items-center md:px-8 md:border-x border-border">
+                        <span className="text-xs text-muted-foreground mb-1.5 font-medium uppercase tracking-wider">AI No-Show Risk</span>
+                        {apt.no_show_risk > 50 ? (
+                          <Badge variant="destructive" className="px-3 py-1 text-sm bg-destructive/10 text-destructive border-destructive/20">
+                            <ShieldAlert className="h-4 w-4 mr-1" /> {apt.no_show_risk}% High Risk
+                          </Badge>
+                        ) : apt.no_show_risk > 20 ? (
+                          <Badge variant="warning" className="px-3 py-1 text-sm bg-warning/10 text-warning border-warning/20">
+                            <AlertTriangle className="h-4 w-4 mr-1" /> {apt.no_show_risk}% Medium Risk
+                          </Badge>
+                        ) : (
+                          <Badge variant="success" className="px-3 py-1 text-sm bg-success/10 text-success border-success/20">
+                            <Check className="h-4 w-4 mr-1" /> {apt.no_show_risk || 0}% Safe
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* Admin Action Buttons */}
+                      <div className="flex flex-col sm:flex-row md:flex-col lg:flex-row gap-2">
+                        <Button size="sm" variant="outline" className="border-success text-success hover:bg-success/10" onClick={() => handleTriageAction(apt.appointment_id, "confirm")}>
+                          Confirm Slot
+                        </Button>
+                        <Button size="sm" variant="outline" className="border-warning text-warning hover:bg-warning/10" onClick={() => handleTriageAction(apt.appointment_id, "double_book")}>
+                          Double Book
+                        </Button>
+                        <Button size="sm" variant="outline" className="border-destructive text-destructive hover:bg-destructive/10" onClick={() => handleTriageAction(apt.appointment_id, "dismiss")}>
+                          Dismiss
+                        </Button>
+                      </div>
+
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </motion.div>
         )}
 
@@ -325,7 +435,7 @@ const AdminDashboard = () => {
           </motion.div>
         )}
 
-        {/* DIRECTORY TAB RE-ADDED */}
+        {/* DIRECTORY TAB */}
         {activeTab === "directory" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-3">

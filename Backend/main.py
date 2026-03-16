@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Import everyone's hard work!
-from routers import patient_routes, bed_routes, emergency_routes, appointment_routes, ml_routes
+# Import everyone's hard work, including the new Admin Routes!
+from routers import patient_routes, bed_routes, emergency_routes, appointment_routes, ml_routes, admin_routes
 
 app = FastAPI(title="Intelligent Health Hub API", version="1.0")
 
@@ -33,6 +33,9 @@ app.include_router(appointment_routes.router)
 
 # 🧠 Plug in Person 4's Machine Learning routes
 app.include_router(ml_routes.router)
+
+# 🛡️ Plug in the NEW Admin Dashboard routes
+app.include_router(admin_routes.router)
 
 @app.get("/")
 def health_check():

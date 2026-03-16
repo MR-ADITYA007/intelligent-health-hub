@@ -4,7 +4,7 @@ import psycopg2
 import psycopg2.extras
 import os
 from dotenv import load_dotenv
-from datetime import datetime  # <-- ADDED THIS FOR AGE CALCULATION
+from datetime import datetime  
 
 # Load database credentials from the .env file
 load_dotenv()
@@ -20,53 +20,52 @@ patient_cache = {}
 def get_db_connection():
     return psycopg2.connect(DB_URL, cursor_factory=psycopg2.extras.RealDictCursor)
 
-@router.get("/{patient_id}/history")
-def get_patient_history(patient_id: int):
+# ==========================================
+# ENDPOINT: Fetch Patient History
+# ==========================================
+@router.get("/{uid}/history")
+def get_patient_history(uid: str):
     # STEP 1: Check the Cache (O(1) Time Complexity)
-    if patient_id in patient_cache:
-        print(f"⚡ CACHE HIT: Retrieved records for patient {patient_id} instantly.")
+    if uid in patient_cache:
+        print(f"⚡ CACHE HIT: Retrieved records for patient {uid} instantly.")
         return {
             "retrieval_speed": "O(1) Constant Time",
             "source": "Memory Cache",
-            "patient_id": patient_id,
-            "data": patient_cache[patient_id]
+            "uid": uid,
+            "data": patient_cache[uid]
         }
 
     # STEP 2: Cache Miss. Query the REAL Database
-    print(f"🔍 CACHE MISS: Querying PostgreSQL for patient {patient_id}...")
+    print(f"🔍 CACHE MISS: Querying PostgreSQL for patient {uid}...")
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Querying your real medical_records table
         cursor.execute("""
             SELECT record_id, diagnosis, prescription, visit_date AS date 
             FROM medical_records 
             WHERE patient_id = %s
             ORDER BY visit_date DESC;
-        """, (patient_id,))
+        """, (uid,))
         
         records = cursor.fetchall()
         
-        # If the database is empty, we don't throw an error! We just return an empty list.
         if not records:
             print("Database checked, but no records exist for this patient yet.")
             records = []
         else:
-            # Only save to cache if we actually found real data
-            patient_cache[patient_id] = records
+            patient_cache[uid] = records
         
         return {
             "retrieval_speed": "O(log N) Logarithmic Time",
             "source": "PostgreSQL Database",
-            "patient_id": patient_id,
+            "uid": uid,
             "data": records
         }
     
     except psycopg2.Error as e:
-        # This will only trigger if your table is missing or DB is offline
         print(f"Database Error: {e}")
         if conn:
             conn.rollback()
@@ -80,19 +79,17 @@ def get_patient_history(patient_id: int):
 # ==========================================
 # ENDPOINT: Fetch Patient Profile (SQL JOIN)
 # ==========================================
-@router.get("/{patient_id}/profile")
-def get_patient_profile(patient_id: int):
+@router.get("/{uid}/profile")
+def get_patient_profile(uid: str):
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # The SQL JOIN: Zipping the users table and patient_profiles table together
-        # Added p.dob here so the React frontend can auto-fill the date picker!
         query = """
             SELECT 
-                u.user_id, 
+                u.uid, 
                 u.full_name, 
                 u.email, 
                 u.phone,
@@ -101,14 +98,13 @@ def get_patient_profile(patient_id: int):
                 p.distance_miles, 
                 p.blood_group
             FROM users u
-            LEFT JOIN patient_profiles p ON u.user_id = p.user_id
-            WHERE u.user_id = %s;
+            LEFT JOIN patient_profiles p ON u.uid = p.uid
+            WHERE u.uid = %s;
         """
         
-        cursor.execute(query, (patient_id,))
+        cursor.execute(query, (uid,))
         profile = cursor.fetchone()
 
-        # Format the date properly for React if it exists
         if profile and profile.get('dob'):
             profile['dob'] = profile['dob'].strftime("%Y-%m-%d")
 
@@ -128,9 +124,8 @@ def get_patient_profile(patient_id: int):
         if conn:
             conn.close()
 
-
 # ==========================================
-# NEW ENDPOINT: Update/Save Patient Profile
+# ENDPOINT: Update/Save Patient Profile
 # ==========================================
 class ProfileUpdate(BaseModel):
     full_name: str
@@ -139,39 +134,35 @@ class ProfileUpdate(BaseModel):
     dob: str
     distance_miles: int
 
-@router.post("/{patient_id}/update-profile")
-def update_patient_profile(patient_id: int, data: ProfileUpdate):
+@router.post("/{uid}/update-profile")
+def update_patient_profile(uid: str, data: ProfileUpdate):
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # 1. Smart Age Calculation (Calculates age based on the DOB they provided)
         birth_date = datetime.strptime(data.dob, "%Y-%m-%d")
         today = datetime.today()
         calculated_age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
 
-        # 2. Update the 'users' table (Name, Email, Phone)
         cursor.execute("""
             UPDATE users 
             SET full_name = %s, email = %s, phone = %s
-            WHERE user_id = %s;
-        """, (data.full_name, data.email, data.phone, patient_id))
+            WHERE uid = %s;
+        """, (data.full_name, data.email, data.phone, uid))
 
-        # 3. UPSERT the 'patient_profiles' table (DOB, calculated Age, Distance)
         cursor.execute("""
-            INSERT INTO patient_profiles (user_id, dob, age, distance_miles)
+            INSERT INTO patient_profiles (uid, dob, age, distance_miles)
             VALUES (%s, %s, %s, %s)
-            ON CONFLICT (user_id) 
+            ON CONFLICT (uid) 
             DO UPDATE SET 
                 dob = EXCLUDED.dob, 
                 age = EXCLUDED.age, 
                 distance_miles = EXCLUDED.distance_miles;
-        """, (patient_id, data.dob, calculated_age, data.distance_miles))
+        """, (uid, data.dob, calculated_age, data.distance_miles))
         
         conn.commit()
-        
         return {"status": "success", "message": "Comprehensive Profile saved successfully!"}
         
     except Exception as e:
@@ -179,6 +170,51 @@ def update_patient_profile(patient_id: int, data: ProfileUpdate):
         if conn:
             conn.rollback()
         raise HTTPException(status_code=500, detail="Failed to update patient profile")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+# ==========================================
+# ENDPOINT: Sync Firebase User to Supabase
+# ==========================================
+class UserSync(BaseModel):
+    uid: str
+    email: str
+    role: str
+
+@router.post("/sync")
+def sync_firebase_user(data: UserSync):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        query = """
+            INSERT INTO users (uid, email, role)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (uid) DO NOTHING;
+        """
+        cursor.execute(query, (data.uid, data.email, data.role))
+        
+        if data.role == "patient":
+            profile_query = """
+                INSERT INTO patient_profiles (uid)
+                VALUES (%s)
+                ON CONFLICT (uid) DO NOTHING;
+            """
+            cursor.execute(profile_query, (data.uid,))
+
+        conn.commit()
+        return {"status": "success", "message": "User synced to Supabase successfully"}
+
+    except Exception as e:
+        print(f"Database Error: {e}")
+        if conn:
+            conn.rollback()
+        raise HTTPException(status_code=500, detail="Failed to sync user")
     finally:
         if cursor:
             cursor.close()
