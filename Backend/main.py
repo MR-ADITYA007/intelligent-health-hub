@@ -2,8 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import everyone's hard work, including the new Admin Routes!
-from routers import patient_routes, bed_routes, emergency_routes, appointment_routes, ml_routes, admin_routes
-
+from routers import patient_routes, bed_routes, emergency_routes, appointment_routes, ml_routes, admin_routes, doctor_routes
 app = FastAPI(title="Intelligent Health Hub API", version="1.0")
 
 # 🚀 BULLETPROOF CORS SETTINGS: 
@@ -36,7 +35,7 @@ app.include_router(ml_routes.router)
 
 # 🛡️ Plug in the NEW Admin Dashboard routes
 app.include_router(admin_routes.router)
-
+app.include_router(doctor_routes.router)
 @app.get("/")
 def health_check():
     return {"status": "SUCCESS", "message": "The combined Master Backend is alive!"}

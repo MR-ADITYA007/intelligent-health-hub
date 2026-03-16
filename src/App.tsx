@@ -10,7 +10,9 @@ import Signup from "./pages/Signup";
 import NotFound from "./pages/NotFound";
 import PatientDashboard from "./pages/PatientDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
-import DoctorSchedule from "./pages/DoctorSchedule";
+
+// --- WE SWAPPED THIS TO YOUR NEW LIVE DASHBOARD! ---
+import DoctorDashboard from "./pages/DoctorDashboard"; 
 import DoctorPatients from "./pages/DoctorPatients";
 
 // --- NEW: Import the AuthProvider Memory ---
@@ -34,7 +36,8 @@ const App = () => (
             <Route path="/patient" element={<PatientDashboard />} />
             <Route path="/patient/*" element={<PatientDashboard />} />
             
-            <Route path="/doctor" element={<DoctorSchedule />} />
+            {/* --- POINT THIS TO THE LIVE DATABASE DASHBOARD! --- */}
+            <Route path="/doctor" element={<DoctorDashboard />} />
             <Route path="/doctor/patients" element={<DoctorPatients />} />
             
             <Route path="/admin" element={<AdminDashboard />} />

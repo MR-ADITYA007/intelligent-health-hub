@@ -165,13 +165,24 @@ const PatientDashboard = () => {
       setTimeout(async () => {
         try {
           const combinedDateTime = `${selectedDate} ${selectedTime}`; 
+          
+          // --- NEW: Map the department to the correct doctor in the database! ---
+          const deptToDoctorMap: Record<string, string> = {
+            "Cardiology": "1",
+            "General Medicine": "2",
+            "Orthopedics": "3",
+            "Dermatology": "4",
+            "Neurology": "5",
+            "Pediatrics": "6",
+          };
+          const assignedDoctorId = deptToDoctorMap[selectedDept] || "1";
 
           await fetch("http://127.0.0.1:8000/api/appointments/book", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               patient_id: currentUser.uid,
-              doctor_id: "1", 
+              doctor_id: assignedDoctorId, // <--- NOW IT USES THE DYNAMIC ID!
               appointment_time: combinedDateTime,
               status: "scheduled",
               priority_score: 1, 
